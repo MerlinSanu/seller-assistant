@@ -11,6 +11,7 @@ from django.views.decorators.csrf import ensure_csrf_cookie
 from django.views.decorators.http import require_POST
 
 from .ai_helper import ACTIONS, MAX_QUESTION_LENGTH, AIError, chat_reply, summarize_sales
+from .currency import format_inr, get_usd_inr_rate
 from .paypal_client import (
     PayPalError,
     capture_order,
@@ -40,14 +41,15 @@ def transactions_api(request):
         return JsonResponse({"error": str(e)}, status=503)
     except requests.RequestException as e:
         return JsonResponse({"error": f"Couldn't reach PayPal: {e}"}, status=502)
-    return JsonResponse({"transactions": rows})
+    # The page uses the rate for its USD / ₹ toggle
+    return JsonResponse({"transactions": rows, "rate": get_usd_inr_rate()})
 
 
 def summary_api(request):
     """Asks the AI to summarise the seller's recent PayPal payments."""
     try:
         rows = get_transactions(days=30)
-        summary = summarize_sales(rows)
+        summary = summarize_sales(rows, rate=get_usd_inr_rate())
     except (PayPalError, AIError) as e:
         return JsonResponse({"error": str(e)}, status=503)
     except requests.RequestException as e:
@@ -96,9 +98,9 @@ def _check_action(plan, rows):
     return None, None
 
 
-def _confirm_card(action):
-    """What the seller sees on the confirm card."""
-    money = f"${action['amount']:.2f}"
+def _confirm_card(action, rate):
+    """What the seller sees on the confirm card (dollars, with rupees alongside)."""
+    money = f"${action['amount']:.2f}  (≈ {format_inr(action['amount'], rate)})"
     if action["type"] == "checkout_link":
         return "🔗 Create payment link", [["Item", action["item"]], ["Amount", money]]
     if action["type"] == "invoice":
@@ -128,7 +130,8 @@ def chat_api(request):
 
     try:
         rows = get_transactions(days=30)
-        plan = chat_reply(rows, question, history)
+        rate = get_usd_inr_rate()
+        plan = chat_reply(rows, question, history, rate=rate)
     except (PayPalError, AIError) as e:
         return JsonResponse({"error": str(e)}, status=503)
     except requests.RequestException as e:
@@ -141,7 +144,7 @@ def chat_api(request):
     if problem:
         return JsonResponse({"answer": problem})
 
-    title, details = _confirm_card(action)
+    title, details = _confirm_card(action, rate)
     return JsonResponse({
         "answer": plan["reply"],
         "action": {

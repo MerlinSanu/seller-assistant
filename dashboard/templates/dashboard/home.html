@@ -38,11 +38,45 @@
             background-clip: text;
             color: transparent;
         }
-        .subtitle { color: var(--muted); margin: 0 0 32px; }
+        .subtitle { color: var(--muted); margin: 0; }
+        .topbar {
+            display: flex; align-items: center; justify-content: space-between;
+            flex-wrap: wrap; gap: 14px; margin-bottom: 32px;
+        }
+
+        /* ---------- USD / INR toggle ---------- */
+        .currency-toggle {
+            position: relative;
+            display: inline-flex;
+            background: var(--panel);
+            border: 1px solid var(--border);
+            border-radius: 999px;
+            padding: 4px;
+        }
+        .currency-toggle button {
+            position: relative; z-index: 1;
+            background: none; border: none;
+            color: var(--muted);
+            font-family: inherit; font-size: 0.9rem; font-weight: 600;
+            padding: 7px 18px; min-width: 84px;
+            border-radius: 999px; cursor: pointer;
+            transition: color 0.25s;
+        }
+        .currency-toggle button[aria-pressed="true"] { color: #1a1608; }
+        .currency-toggle .slider {
+            position: absolute; top: 4px; bottom: 4px; left: 4px;
+            width: calc(50% - 4px);
+            background: linear-gradient(90deg, var(--gold), var(--gold-light));
+            border-radius: 999px;
+            box-shadow: 0 2px 12px rgba(212, 175, 55, 0.35);
+            transition: transform 0.3s cubic-bezier(.4, 1.3, .6, 1);
+        }
+        .currency-toggle.inr .slider { transform: translateX(100%); }
+        .currency-toggle button:focus-visible { outline: 2px solid var(--gold-light); outline-offset: 2px; }
 
         .stats {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            grid-template-columns: repeat(auto-fit, minmax(min(200px, 100%), 1fr));
             gap: 16px;
             margin-bottom: 28px;
         }
@@ -56,6 +90,18 @@
         .card:hover { border-color: var(--gold); transform: translateY(-2px); }
         .card .label { color: var(--muted); font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.08em; }
         .card .value { font-family: Georgia, serif; font-size: 1.9rem; color: var(--gold-light); margin-top: 6px; }
+        .card .value.flip { animation: flip 0.35s ease-out; }
+        @keyframes flip { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: none; } }
+        .card .sub { color: var(--muted); font-size: 0.85rem; margin-top: 4px; min-height: 1.2em; }
+        .rate-note {
+            display: none;
+            align-items: center; gap: 8px; flex-wrap: wrap;
+            color: var(--muted); font-size: 0.82rem;
+            margin: -16px 0 28px;
+        }
+        .rate-note .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--green); box-shadow: 0 0 8px var(--green); }
+        .rate-note .dot.offline { background: var(--amber); box-shadow: 0 0 8px var(--amber); }
+        .rate-note a { color: var(--muted); }
 
         .ai-card {
             position: relative;
@@ -241,7 +287,14 @@
 <body>
 <div class="wrap">
     <h1>Seller Assistant</h1>
-    <p class="subtitle">Your PayPal payments from the last 30 days</p>
+    <div class="topbar">
+        <p class="subtitle">Your PayPal payments from the last 30 days</p>
+        <div class="currency-toggle" id="currency-toggle" role="group" aria-label="Show amounts in">
+            <span class="slider"></span>
+            <button type="button" data-currency="USD" aria-pressed="true">$ USD</button>
+            <button type="button" data-currency="INR" aria-pressed="false">₹ INR</button>
+        </div>
+    </div>
 
     <div class="ai-card">
         <div class="ai-label">✨ AI summary</div>
@@ -253,10 +306,14 @@
     </div>
 
     <div class="stats">
-        <div class="card"><div class="label">Payments</div><div class="value" id="stat-count">–</div></div>
-        <div class="card"><div class="label">Revenue</div><div class="value" id="stat-revenue">–</div></div>
-        <div class="card"><div class="label">PayPal fees</div><div class="value" id="stat-fees">–</div></div>
-        <div class="card"><div class="label">You keep</div><div class="value" id="stat-net">–</div></div>
+        <div class="card"><div class="label">Payments</div><div class="value" id="stat-count">–</div><div class="sub">completed</div></div>
+        <div class="card"><div class="label">Revenue</div><div class="value" id="stat-revenue">–</div><div class="sub" id="stat-revenue-alt"></div></div>
+        <div class="card"><div class="label">PayPal fees</div><div class="value" id="stat-fees">–</div><div class="sub" id="stat-fees-alt"></div></div>
+        <div class="card"><div class="label">You keep</div><div class="value" id="stat-net">–</div><div class="sub" id="stat-net-alt"></div></div>
+    </div>
+    <div class="rate-note" id="rate-note">
+        <span class="dot" id="rate-dot"></span>
+        <span id="rate-text"></span>
     </div>
 
     <div class="chat-card">
@@ -268,6 +325,7 @@
             <button type="button" class="chip">Who paid me the most?</button>
             <button type="button" class="chip">How much did I lose to fees?</button>
             <button type="button" class="chip">Which item sells best?</button>
+            <button type="button" class="chip">How much did I earn in rupees?</button>
             <button type="button" class="chip">Make a payment link for a brass lamp, $25</button>
         </div>
         <form class="chat-form" id="chat-form">
@@ -283,7 +341,51 @@
 </div>
 
 <script>
-    const money = (v) => (v === null || v === undefined) ? "" : "$" + Number(v).toFixed(2);
+    // ---------- Money: USD or INR ----------
+    let rate = null;          // {rate: 94.85, live: true, updated: "..."} from the server
+    let currency = "USD";     // what the seller chose with the toggle
+    let allRows = [];
+
+    const usd = (v) => "$" + Number(v).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    // Indian style grouping: ₹1,23,456
+    const inr = (v) => "₹" + Math.round(Number(v) * rate.rate).toLocaleString("en-IN");
+    const money = (v) => {
+        if (v === null || v === undefined) return "";
+        return currency === "INR" && rate ? inr(v) : usd(v);
+    };
+    // The "other" currency, shown small under each stat
+    const otherMoney = (v) => !rate ? "" : (currency === "INR" ? usd(v) : "≈ " + inr(v));
+
+    const toggle = document.getElementById("currency-toggle");
+
+    function setCurrency(next, animate) {
+        currency = (next === "INR" && rate) ? "INR" : "USD";
+        toggle.classList.toggle("inr", currency === "INR");
+        toggle.querySelectorAll("button").forEach((b) =>
+            b.setAttribute("aria-pressed", String(b.dataset.currency === currency)));
+        try { localStorage.setItem("currency", currency); } catch (e) {}
+        updateStats(allRows, animate);
+        grid.refreshCells({ force: true });  // re-draws the table in the new currency
+    }
+
+    toggle.addEventListener("click", (e) => {
+        const btn = e.target.closest("button");
+        if (btn && btn.dataset.currency !== currency) setCurrency(btn.dataset.currency, true);
+    });
+
+    function showRate() {
+        if (!rate) return;
+        const note = document.getElementById("rate-note");
+        const day = rate.updated
+            ? new Date(rate.updated).toLocaleDateString("en-IN", { day: "numeric", month: "short" })
+            : null;
+        document.getElementById("rate-dot").classList.toggle("offline", !rate.live);
+        document.getElementById("rate-text").textContent =
+            `1 USD = ₹${rate.rate.toFixed(2)} · ` +
+            (rate.live ? `market rate${day ? ", updated " + day : ""}` : "estimated rate (live rate unavailable)") +
+            " · PayPal's own conversion rate is usually 3–4% lower";
+        note.style.display = "flex";
+    }
 
     const statusColors = {
         Completed: "var(--green)",
@@ -340,13 +442,16 @@
         box.style.display = "block";
     }
 
-    function updateStats(rows) {
+    function updateStats(rows, animate) {
         const done = rows.filter((r) => r.status === "Completed" && r.amount > 0);
         const sum = (key) => done.reduce((total, r) => total + r[key], 0);
         document.getElementById("stat-count").textContent = done.length;
-        document.getElementById("stat-revenue").textContent = money(sum("amount"));
-        document.getElementById("stat-fees").textContent = money(sum("fee"));
-        document.getElementById("stat-net").textContent = money(sum("net"));
+        [["revenue", "amount"], ["fees", "fee"], ["net", "net"]].forEach(([id, key]) => {
+            const el = document.getElementById("stat-" + id);
+            el.textContent = money(sum(key));
+            document.getElementById("stat-" + id + "-alt").textContent = otherMoney(sum(key));
+            if (animate) { el.classList.remove("flip"); void el.offsetWidth; el.classList.add("flip"); }
+        });
     }
 
     fetch("/api/transactions/")
@@ -357,8 +462,13 @@
                 grid.setGridOption("rowData", []);
                 return;
             }
-            grid.setGridOption("rowData", data.transactions);
-            updateStats(data.transactions);
+            allRows = data.transactions;
+            rate = data.rate || null;
+            showRate();
+            grid.setGridOption("rowData", allRows);
+            let saved = "USD";
+            try { saved = localStorage.getItem("currency") || "USD"; } catch (e) {}
+            setCurrency(saved, false);
         })
         .catch(() => showMessage("⚠️ Couldn't load transactions. Is the server running?"));
 
