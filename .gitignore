@@ -1,0 +1,6 @@
+# Keep secrets and junk out of GitHub
+.env
+venv/
+__pycache__/
+*.pyc
+db.sqlite3

@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Seller Assistant</title>
+    <script src="https://cdn.jsdelivr.net/npm/ag-grid-community@33/dist/ag-grid-community.min.js"></script>
+    <style>
+        :root {
+            --bg: #0c0c0f;
+            --panel: #15151a;
+            --border: #2a2a31;
+            --gold: #d4af37;
+            --gold-light: #f5e6a8;
+            --text: #e8e2d0;
+            --muted: #8b8676;
+            --green: #7fbf8e;
+            --red: #d98080;
+            --amber: #e0b860;
+        }
+        * { box-sizing: border-box; }
+        body {
+            margin: 0;
+            background:
+                radial-gradient(ellipse at top, rgba(212, 175, 55, 0.08), transparent 60%),
+                var(--bg);
+            color: var(--text);
+            font-family: "Segoe UI", system-ui, sans-serif;
+            min-height: 100vh;
+        }
+        .wrap { max-width: 1200px; margin: 0 auto; padding: 40px 20px; }
+        h1 {
+            font-family: Georgia, serif;
+            font-size: 2.6rem;
+            margin: 0 0 6px;
+            background: linear-gradient(90deg, var(--gold), var(--gold-light));
+            -webkit-background-clip: text;
+            background-clip: text;
+            color: transparent;
+        }
+        .subtitle { color: var(--muted); margin: 0 0 32px; }
+
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 16px;
+            margin-bottom: 28px;
+        }
+        .card {
+            background: var(--panel);
+            border: 1px solid var(--border);
+            border-radius: 14px;
+            padding: 18px 20px;
+            transition: border-color 0.2s, transform 0.2s;
+        }
+        .card:hover { border-color: var(--gold); transform: translateY(-2px); }
+        .card .label { color: var(--muted); font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.08em; }
+        .card .value { font-family: Georgia, serif; font-size: 1.9rem; color: var(--gold-light); margin-top: 6px; }
+
+        .ai-card {
+            position: relative;
+            background: linear-gradient(135deg, rgba(212, 175, 55, 0.12), rgba(21, 21, 26, 0.9));
+            border: 1px solid rgba(212, 175, 55, 0.35);
+            border-radius: 16px;
+            padding: 22px 24px;
+            margin-bottom: 24px;
+        }
+        .ai-card .ai-label {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 0.8rem;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            color: var(--gold);
+            margin-bottom: 10px;
+        }
+        .ai-card .ai-text {
+            font-family: Georgia, serif;
+            font-size: 1.15rem;
+            line-height: 1.6;
+            color: var(--text);
+            margin: 0;
+        }
+        .ai-card .ai-text.error { color: var(--amber); font-family: inherit; font-size: 0.95rem; }
+        .shimmer {
+            height: 14px;
+            border-radius: 7px;
+            margin: 10px 0;
+            background: linear-gradient(90deg, #22222a 0%, #34322a 50%, #22222a 100%);
+            background-size: 200% 100%;
+            animation: shimmer 1.4s infinite;
+        }
+        @keyframes shimmer { from { background-position: 200% 0; } to { background-position: -200% 0; } }
+
+        .section-title { font-family: Georgia, serif; font-size: 1.3rem; margin: 0 0 12px; color: var(--text); }
+        #grid { height: 480px; width: 100%; }
+        #message {
+            display: none;
+            background: var(--panel);
+            border: 1px solid var(--border);
+            border-left: 3px solid var(--amber);
+            border-radius: 10px;
+            padding: 14px 18px;
+            margin-bottom: 16px;
+            color: var(--text);
+        }
+    </style>
+</head>
+<body>
+<div class="wrap">
+    <h1>Seller Assistant</h1>
+    <p class="subtitle">Your PayPal payments from the last 30 days</p>
+
+    <div class="ai-card">
+        <div class="ai-label">✨ AI summary</div>
+        <div id="ai-summary">
+            <div class="shimmer" style="width: 95%"></div>
+            <div class="shimmer" style="width: 80%"></div>
+            <div class="shimmer" style="width: 60%"></div>
+        </div>
+    </div>
+
+    <div class="stats">
+        <div class="card"><div class="label">Payments</div><div class="value" id="stat-count">–</div></div>
+        <div class="card"><div class="label">Revenue</div><div class="value" id="stat-revenue">–</div></div>
+        <div class="card"><div class="label">PayPal fees</div><div class="value" id="stat-fees">–</div></div>
+        <div class="card"><div class="label">You keep</div><div class="value" id="stat-net">–</div></div>
+    </div>
+
+    <h2 class="section-title">Transactions</h2>
+    <div id="message"></div>
+    <div id="grid"></div>
+</div>
+
+<script>
+    const money = (v) => (v === null || v === undefined) ? "" : "$" + Number(v).toFixed(2);
+
+    const statusColors = {
+        Completed: "var(--green)",
+        Pending: "var(--amber)",
+        Refunded: "var(--red)",
+        Denied: "var(--red)",
+    };
+
+    const columnDefs = [
+        {
+            field: "date", headerName: "Date", sort: "desc", minWidth: 150,
+            valueFormatter: (p) => p.value ? new Date(p.value).toLocaleString("en-IN", {
+                day: "numeric", month: "short", hour: "2-digit", minute: "2-digit"
+            }) : "",
+        },
+        { field: "customer", headerName: "Customer", minWidth: 150 },
+        { field: "country", headerName: "Country", width: 110 },
+        { field: "item", headerName: "Item", minWidth: 180, flex: 1 },
+        { field: "amount", headerName: "Amount", width: 120, valueFormatter: (p) => money(p.value), type: "rightAligned" },
+        { field: "fee", headerName: "Fee", width: 100, valueFormatter: (p) => money(p.value), type: "rightAligned" },
+        { field: "net", headerName: "You keep", width: 120, valueFormatter: (p) => money(p.value), type: "rightAligned" },
+        {
+            field: "status", headerName: "Status", width: 130,
+            cellStyle: (p) => ({ color: statusColors[p.value] || "var(--muted)", fontWeight: 600 }),
+        },
+    ];
+
+    const theme = agGrid.themeQuartz.withParams({
+        backgroundColor: "#15151a",
+        foregroundColor: "#e8e2d0",
+        headerBackgroundColor: "#1c1c22",
+        headerTextColor: "#d4af37",
+        borderColor: "#2a2a31",
+        accentColor: "#d4af37",
+        rowHoverColor: "rgba(212, 175, 55, 0.08)",
+        oddRowBackgroundColor: "#17171c",
+        fontFamily: '"Segoe UI", system-ui, sans-serif',
+        wrapperBorderRadius: 14,
+    });
+
+    const grid = agGrid.createGrid(document.getElementById("grid"), {
+        theme,
+        columnDefs,
+        rowData: [],
+        defaultColDef: { sortable: true, filter: true, resizable: true },
+        pagination: true,
+        paginationPageSize: 20,
+        overlayNoRowsTemplate: '<span style="color:#8b8676">No payments in the last 30 days yet.</span>',
+    });
+
+    function showMessage(text) {
+        const box = document.getElementById("message");
+        box.textContent = text;
+        box.style.display = "block";
+    }
+
+    function updateStats(rows) {
+        const done = rows.filter((r) => r.status === "Completed" && r.amount > 0);
+        const sum = (key) => done.reduce((total, r) => total + r[key], 0);
+        document.getElementById("stat-count").textContent = done.length;
+        document.getElementById("stat-revenue").textContent = money(sum("amount"));
+        document.getElementById("stat-fees").textContent = money(sum("fee"));
+        document.getElementById("stat-net").textContent = money(sum("net"));
+    }
+
+    fetch("/api/transactions/")
+        .then((res) => res.json())
+        .then((data) => {
+            if (data.error) {
+                showMessage("⚠️ " + data.error);
+                grid.setGridOption("rowData", []);
+                return;
+            }
+            grid.setGridOption("rowData", data.transactions);
+            updateStats(data.transactions);
+        })
+        .catch(() => showMessage("⚠️ Couldn't load transactions. Is the server running?"));
+
+    // Load the AI summary separately, so the table doesn't wait for the AI
+    function showSummary(text, isError) {
+        const box = document.getElementById("ai-summary");
+        box.innerHTML = "";
+        const p = document.createElement("p");
+        p.className = "ai-text" + (isError ? " error" : "");
+        p.textContent = text;
+        box.appendChild(p);
+    }
+
+    fetch("/api/summary/")
+        .then((res) => res.json())
+        .then((data) => {
+            if (data.error) showSummary("⚠️ " + data.error, true);
+            else showSummary(data.summary, false);
+        })
+        .catch(() => showSummary("⚠️ Couldn't load the AI summary.", true));
+</script>
+</body>
+</html>
