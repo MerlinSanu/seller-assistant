@@ -65,7 +65,7 @@
             padding: 22px 24px;
             margin-bottom: 24px;
         }
-        .ai-card .ai-label {
+        .ai-label {
             display: inline-flex;
             align-items: center;
             gap: 8px;
@@ -92,6 +92,103 @@
             animation: shimmer 1.4s infinite;
         }
         @keyframes shimmer { from { background-position: 200% 0; } to { background-position: -200% 0; } }
+
+        /* ---------- Chat ---------- */
+        .chat-card {
+            background: var(--panel);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            padding: 22px 24px;
+            margin-bottom: 28px;
+            transition: border-color 0.2s;
+        }
+        .chat-card:focus-within { border-color: rgba(212, 175, 55, 0.5); }
+        .chat-messages {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            max-height: 340px;
+            overflow-y: auto;
+            padding: 4px 2px 14px;
+            scroll-behavior: smooth;
+        }
+        .msg {
+            max-width: 80%;
+            padding: 10px 14px;
+            border-radius: 14px;
+            line-height: 1.55;
+            font-size: 0.97rem;
+            white-space: pre-wrap;
+            animation: pop 0.25s ease-out;
+        }
+        @keyframes pop { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+        .msg.user {
+            align-self: flex-end;
+            background: linear-gradient(135deg, var(--gold), #e8cc6a);
+            color: #1a1608;
+            border-bottom-right-radius: 4px;
+        }
+        .msg.bot {
+            align-self: flex-start;
+            background: #1c1c22;
+            border: 1px solid var(--border);
+            border-bottom-left-radius: 4px;
+        }
+        .msg.error { color: var(--amber); }
+        .msg.typing { color: var(--muted); font-style: italic; }
+        .msg.typing::after {
+            content: "";
+            display: inline-block;
+            width: 1.2em;
+            text-align: left;
+            animation: dots 1.2s steps(4, end) infinite;
+        }
+        @keyframes dots {
+            0% { content: ""; } 25% { content: "."; } 50% { content: ".."; } 75% { content: "..."; }
+        }
+        .chips { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
+        .chip {
+            background: transparent;
+            border: 1px solid rgba(212, 175, 55, 0.4);
+            color: var(--gold-light);
+            border-radius: 999px;
+            padding: 6px 14px;
+            font-size: 0.85rem;
+            font-family: inherit;
+            cursor: pointer;
+            transition: background 0.2s, border-color 0.2s;
+        }
+        .chip:hover { background: rgba(212, 175, 55, 0.12); border-color: var(--gold); }
+        .chip:disabled { opacity: 0.5; cursor: not-allowed; }
+        .chat-form { display: flex; gap: 10px; }
+        .chat-form input {
+            flex: 1;
+            min-width: 0;
+            background: var(--bg);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 12px 14px;
+            color: var(--text);
+            font-size: 0.97rem;
+            font-family: inherit;
+            outline: none;
+            transition: border-color 0.2s;
+        }
+        .chat-form input:focus { border-color: var(--gold); }
+        .chat-form input::placeholder { color: var(--muted); }
+        .chat-form button {
+            background: linear-gradient(90deg, var(--gold), var(--gold-light));
+            color: #1a1608;
+            border: none;
+            border-radius: 10px;
+            padding: 0 22px;
+            font-weight: 600;
+            font-family: inherit;
+            cursor: pointer;
+            transition: opacity 0.2s, transform 0.1s;
+        }
+        .chat-form button:active { transform: scale(0.97); }
+        .chat-form button:disabled { opacity: 0.5; cursor: not-allowed; }
 
         .section-title { font-family: Georgia, serif; font-size: 1.3rem; margin: 0 0 12px; color: var(--text); }
         #grid { height: 480px; width: 100%; }
@@ -126,6 +223,24 @@
         <div class="card"><div class="label">Revenue</div><div class="value" id="stat-revenue">–</div></div>
         <div class="card"><div class="label">PayPal fees</div><div class="value" id="stat-fees">–</div></div>
         <div class="card"><div class="label">You keep</div><div class="value" id="stat-net">–</div></div>
+    </div>
+
+    <div class="chat-card">
+        <div class="ai-label">💬 Ask about your payments</div>
+        <div class="chat-messages" id="chat-messages">
+            <div class="msg bot">Hi! Ask me anything about your PayPal payments from the last 30 days.</div>
+        </div>
+        <div class="chips">
+            <button type="button" class="chip">Who paid me the most?</button>
+            <button type="button" class="chip">How much did I lose to fees?</button>
+            <button type="button" class="chip">Which item sells best?</button>
+            <button type="button" class="chip">Any payments I should check?</button>
+        </div>
+        <form class="chat-form" id="chat-form">
+            <input id="chat-input" type="text" maxlength="500" autocomplete="off"
+                   placeholder="e.g. How much did customers in the US pay me?">
+            <button type="submit" id="chat-send">Send</button>
+        </form>
     </div>
 
     <h2 class="section-title">Transactions</h2>
@@ -230,6 +345,81 @@
             else showSummary(data.summary, false);
         })
         .catch(() => showSummary("⚠️ Couldn't load the AI summary.", true));
+
+    // ---------- Ask-your-data chat ----------
+    const chatBox = document.getElementById("chat-messages");
+    const chatForm = document.getElementById("chat-form");
+    const chatInput = document.getElementById("chat-input");
+    const chatSend = document.getElementById("chat-send");
+    const chips = document.querySelectorAll(".chip");
+    const chatHistory = [];  // remembers the conversation so follow-up questions make sense
+
+    // Django's security token, needed for POST requests
+    function getCookie(name) {
+        const match = document.cookie.match(new RegExp("(^|;\\s*)" + name + "=([^;]*)"));
+        return match ? decodeURIComponent(match[2]) : "";
+    }
+
+    function addMessage(text, className) {
+        const div = document.createElement("div");
+        div.className = "msg " + className;
+        div.textContent = text;  // textContent (not innerHTML) keeps it safe
+        chatBox.appendChild(div);
+        chatBox.scrollTop = chatBox.scrollHeight;
+        return div;
+    }
+
+    function setBusy(busy) {
+        chatInput.disabled = busy;
+        chatSend.disabled = busy;
+        chips.forEach((c) => (c.disabled = busy));
+    }
+
+    async function askQuestion(question) {
+        question = question.trim();
+        if (!question) return;
+
+        addMessage(question, "user");
+        chatInput.value = "";
+        setBusy(true);
+        const typing = addMessage("Thinking", "bot typing");
+
+        try {
+            const res = await fetch("/api/chat/", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    "X-CSRFToken": getCookie("csrftoken"),
+                },
+                body: JSON.stringify({ question, history: chatHistory.slice(-6) }),
+            });
+            typing.remove();
+
+            if (res.status === 403) {
+                addMessage("⚠️ Security check failed. Please refresh the page and try again.", "bot error");
+                return;
+            }
+            const data = await res.json();
+            if (data.error) {
+                addMessage("⚠️ " + data.error, "bot error");
+            } else {
+                addMessage(data.answer, "bot");
+                chatHistory.push({ role: "user", text: question }, { role: "assistant", text: data.answer });
+            }
+        } catch (e) {
+            typing.remove();
+            addMessage("⚠️ Couldn't reach the server. Is it running?", "bot error");
+        } finally {
+            setBusy(false);
+            chatInput.focus();
+        }
+    }
+
+    chatForm.addEventListener("submit", (e) => {
+        e.preventDefault();
+        askQuestion(chatInput.value);
+    });
+    chips.forEach((chip) => chip.addEventListener("click", () => askQuestion(chip.textContent)));
 </script>
 </body>
 </html>
