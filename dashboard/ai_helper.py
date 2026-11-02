@@ -6,7 +6,9 @@ to the AI. The AI only turns them into friendly words. This stops the AI
 from making maths mistakes or inventing numbers.
 """
 
+import hashlib
 import json
+import logging
 import os
 import time
 from collections import defaultdict
@@ -17,6 +19,7 @@ from google import genai
 from google.genai import types
 
 from .currency import format_inr
+from .translations import LANGUAGES, clean_lang
 
 load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 
@@ -26,6 +29,11 @@ MODEL = os.getenv("GEMINI_MODEL", "gemini-3.5-flash")
 FALLBACK_MODEL = os.getenv("GEMINI_FALLBACK_MODEL", "gemini-3.5-flash")
 
 MAX_QUESTION_LENGTH = 500
+
+log = logging.getLogger(__name__)
+
+SUMMARY_CACHE_SECONDS = 10 * 60  # reuse a summary for 10 minutes if nothing changed
+_summary_cache = {}
 
 
 class AIError(Exception):
@@ -48,9 +56,15 @@ def _client():
 
 
 def _is_busy_error(error):
-    """True if Gemini is just overloaded or rate-limited (worth trying again)."""
+    """True if Google's servers are overloaded (worth waiting and trying again)."""
     text = str(error)
-    return any(sign in text for sign in ("503", "UNAVAILABLE", "429", "RESOURCE_EXHAUSTED", "overloaded"))
+    return any(sign in text for sign in ("503", "UNAVAILABLE", "overloaded"))
+
+
+def _is_limit_error(error):
+    """True if we've used up the free-tier allowance for this model (too many requests)."""
+    text = str(error)
+    return "429" in text or "RESOURCE_EXHAUSTED" in text
 
 
 def _ask_gemini(prompt, want_json=False):
@@ -58,32 +72,43 @@ def _ask_gemini(prompt, want_json=False):
     Shared by the summary and the chat, so error handling lives in one place.
     want_json=True makes Gemini reply in strict JSON (used by the chat).
 
-    If Gemini is busy, we wait a moment and try again, then switch to the
-    backup model, so a short outage doesn't break the app (or the demo!)."""
+    - Overloaded (503): wait a moment and try again, then use the backup model.
+    - Usage limit (429): retrying the same model just wastes more of the limit,
+      so go straight to the backup model (it has its own separate limit).
+    The real error is always printed in the terminal, so we can see what happened."""
     config = types.GenerateContentConfig(response_mime_type="application/json") if want_json else None
     client = _client()
 
-    # Main model twice (with a short pause), then the backup model once
-    attempts = [MODEL, MODEL]
+    models = [MODEL]
     if FALLBACK_MODEL and FALLBACK_MODEL != MODEL:
-        attempts.append(FALLBACK_MODEL)
+        models.append(FALLBACK_MODEL)
 
-    response = None
-    for i, model in enumerate(attempts):
-        try:
-            response = client.models.generate_content(model=model, contents=prompt, config=config)
-            break
-        except Exception as e:
-            if not _is_busy_error(e):
-                raise AIError(f"The AI couldn't respond right now ({e}).")
-            if i == len(attempts) - 1:
-                raise AIError("The AI is very busy right now. Please wait a minute and try again.")
-            time.sleep(2 * (i + 1))  # wait 2s, then 4s
+    hit_limit = False
+    for model in models:
+        tries = 2 if model == MODEL else 1
+        for attempt in range(tries):
+            try:
+                response = client.models.generate_content(model=model, contents=prompt, config=config)
+                text = (response.text or "").strip()
+                if not text:
+                    raise AIError("The AI returned an empty answer. Please try again.")
+                return text
+            except AIError:
+                raise
+            except Exception as e:
+                log.warning("Gemini error from %s: %s", model, e)
+                if _is_limit_error(e):
+                    hit_limit = True
+                    break               # skip to the backup model
+                if not _is_busy_error(e):
+                    raise AIError(f"The AI couldn't respond right now ({e}).")
+                if attempt < tries - 1:
+                    time.sleep(2)
 
-    text = (response.text or "").strip()
-    if not text:
-        raise AIError("The AI returned an empty answer. Please try again.")
-    return text
+    if hit_limit:
+        raise AIError("You've reached the AI's free usage limit for now. Please wait a minute and try again. "
+                      "If it keeps happening, the daily limit is used up and resets tomorrow.")
+    raise AIError("The AI is very busy right now. Please wait a minute and try again.")
 
 
 def calculate_totals(rows, rate=None):
@@ -154,7 +179,17 @@ def _transactions_for_ai(rows, limit=200, with_ids=False, rate=None):
     return tidy
 
 
-def summarize_sales(rows, language="English", rate=None):
+def _language_rule(lang):
+    """Tells the AI which language to write in, and what NOT to translate."""
+    name, script = LANGUAGES[clean_lang(lang)]
+    if name == "English":
+        return "Write in simple English."
+    return (f"Write in simple, everyday {name}, in the {script} script, the way a friendly shopkeeper "
+            f"would talk. Keep customer names, item names, email addresses and money amounts exactly as "
+            f"given (do not translate or change them). Common words like PayPal, invoice and refund can stay in English.")
+
+
+def summarize_sales(rows, lang="en", rate=None):
     """Ask Gemini for a short, friendly summary of the seller's payments."""
     if not rows:
         return "No payments in the last 30 days yet. Once customers start paying, I'll summarise them here."
@@ -162,10 +197,18 @@ def summarize_sales(rows, language="English", rate=None):
     totals = calculate_totals(rows, rate)
     recent = _transactions_for_ai(rows, limit=50)
 
+    # Same payments + same language as a few minutes ago? Reuse that summary,
+    # so switching languages back and forth doesn't use up the AI's free limit.
+    key = hashlib.sha256(json.dumps([lang, totals, recent], sort_keys=True).encode()).hexdigest()
+    cached = _summary_cache.get(key)
+    if cached and time.time() - cached[0] < SUMMARY_CACHE_SECONDS:
+        return cached[1]
+
     prompt = f"""You are a friendly business assistant for a small Indian seller who sells
 handmade products to customers abroad and gets paid through PayPal.
 
-Write a short summary of their recent PayPal sales in {language}.
+Write a short summary of their recent PayPal sales.
+{_language_rule(lang)}
 
 Rules:
 - 2 to 3 sentences, under 70 words.
@@ -182,13 +225,15 @@ Totals (already calculated):
 Recent transactions:
 {json.dumps(recent, indent=2, ensure_ascii=False)}
 """
-    return _ask_gemini(prompt)
+    summary = _ask_gemini(prompt)
+    _summary_cache[key] = (time.time(), summary)
+    return summary
 
 
 ACTIONS = ("checkout_link", "invoice", "refund")
 
 
-def chat_reply(rows, question, history=None, language="English", rate=None):
+def chat_reply(rows, question, history=None, lang="en", rate=None):
     """Reply to the seller's chat message.
 
     Returns a dict:
@@ -219,7 +264,8 @@ def chat_reply(rows, question, history=None, language="English", rate=None):
 
     prompt = f"""You are a friendly business assistant for a small Indian seller who sells
 handmade products to customers abroad and gets paid through PayPal.
-Reply in {language}.
+{_language_rule(lang)} The seller may also write to you in English, Hindi or Malayalam;
+understand any of them, but always write "reply" in the language above.
 
 You can either ANSWER a question about their payments, or prepare one of these ACTIONS:
 - "checkout_link": make a PayPal payment link for an item. Needs: item, amount_usd.
@@ -245,7 +291,7 @@ Rules:
   values exactly as given (like ₹4,268) and say they are approximate. Never convert money
   yourself. Amounts for actions are always in US dollars (amount_usd); if the seller gives
   an amount only in rupees, use "answer" and ask for the price in dollars.
-- Simple everyday words, plain text, no markdown.
+- Plain text, no markdown. "item" and "customer_name" in the JSON stay as the seller wrote them.
 
 Reply with ONLY this JSON (use null for anything not needed):
 {{"action": "answer" | "checkout_link" | "invoice" | "refund",

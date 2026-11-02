@@ -25,7 +25,7 @@
                 radial-gradient(ellipse at top, rgba(212, 175, 55, 0.08), transparent 60%),
                 var(--bg);
             color: var(--text);
-            font-family: "Segoe UI", system-ui, sans-serif;
+            font-family: "Segoe UI", "Nirmala UI", system-ui, sans-serif;
             min-height: 100vh;
         }
         .wrap { max-width: 1200px; margin: 0 auto; padding: 40px 20px; }
@@ -45,7 +45,8 @@
         }
 
         /* ---------- USD / INR toggle ---------- */
-        .currency-toggle {
+        .toggles { display: flex; flex-wrap: wrap; gap: 10px; }
+        .currency-toggle, .lang-toggle {
             position: relative;
             display: inline-flex;
             background: var(--panel);
@@ -53,7 +54,7 @@
             border-radius: 999px;
             padding: 4px;
         }
-        .currency-toggle button {
+        .currency-toggle button, .lang-toggle button {
             position: relative; z-index: 1;
             background: none; border: none;
             color: var(--muted);
@@ -62,8 +63,9 @@
             border-radius: 999px; cursor: pointer;
             transition: color 0.25s;
         }
-        .currency-toggle button[aria-pressed="true"] { color: #1a1608; }
-        .currency-toggle .slider {
+        .currency-toggle button[aria-pressed="true"], .lang-toggle button[aria-pressed="true"] { color: #1a1608; }
+        .lang-toggle button { min-width: 72px; padding: 7px 12px; }
+        .currency-toggle .slider, .lang-toggle .slider {
             position: absolute; top: 4px; bottom: 4px; left: 4px;
             width: calc(50% - 4px);
             background: linear-gradient(90deg, var(--gold), var(--gold-light));
@@ -72,7 +74,13 @@
             transition: transform 0.3s cubic-bezier(.4, 1.3, .6, 1);
         }
         .currency-toggle.inr .slider { transform: translateX(100%); }
-        .currency-toggle button:focus-visible { outline: 2px solid var(--gold-light); outline-offset: 2px; }
+        .lang-toggle .slider { width: calc((100% - 8px) / 3); transform: translateX(calc(var(--i, 0) * 100%)); }
+        .currency-toggle button:focus-visible, .lang-toggle button:focus-visible { outline: 2px solid var(--gold-light); outline-offset: 2px; }
+        /* Hindi and Malayalam letters join up, so no spacing out or capitals */
+        html:not([lang="en"]) .card .label,
+        html:not([lang="en"]) .ai-label { letter-spacing: 0; text-transform: none; font-size: 0.9rem; }
+        .fade { animation: fade 0.3s ease-out; }
+        @keyframes fade { from { opacity: 0.2; } to { opacity: 1; } }
 
         .stats {
             display: grid;
@@ -122,7 +130,7 @@
             margin-bottom: 10px;
         }
         .ai-card .ai-text {
-            font-family: Georgia, serif;
+            font-family: Georgia, "Nirmala UI", serif;
             font-size: 1.15rem;
             line-height: 1.6;
             color: var(--text);
@@ -288,16 +296,24 @@
 <div class="wrap">
     <h1>Seller Assistant</h1>
     <div class="topbar">
-        <p class="subtitle">Your PayPal payments from the last 30 days</p>
-        <div class="currency-toggle" id="currency-toggle" role="group" aria-label="Show amounts in">
-            <span class="slider"></span>
-            <button type="button" data-currency="USD" aria-pressed="true">$ USD</button>
-            <button type="button" data-currency="INR" aria-pressed="false">₹ INR</button>
+        <p class="subtitle" data-i18n="subtitle">Your PayPal payments from the last 30 days</p>
+        <div class="toggles">
+            <div class="lang-toggle" id="lang-toggle" role="group" aria-label="Language">
+                <span class="slider"></span>
+                <button type="button" data-lang="en" aria-pressed="true">English</button>
+                <button type="button" data-lang="hi" aria-pressed="false">हिंदी</button>
+                <button type="button" data-lang="ml" aria-pressed="false">മലയാളം</button>
+            </div>
+            <div class="currency-toggle" id="currency-toggle" role="group" aria-label="Show amounts in">
+                <span class="slider"></span>
+                <button type="button" data-currency="USD" aria-pressed="true">$ USD</button>
+                <button type="button" data-currency="INR" aria-pressed="false">₹ INR</button>
+            </div>
         </div>
     </div>
 
     <div class="ai-card">
-        <div class="ai-label">✨ AI summary</div>
+        <div class="ai-label" data-i18n="ai_summary">✨ AI summary</div>
         <div id="ai-summary">
             <div class="shimmer" style="width: 95%"></div>
             <div class="shimmer" style="width: 80%"></div>
@@ -306,10 +322,10 @@
     </div>
 
     <div class="stats">
-        <div class="card"><div class="label">Payments</div><div class="value" id="stat-count">–</div><div class="sub">completed</div></div>
-        <div class="card"><div class="label">Revenue</div><div class="value" id="stat-revenue">–</div><div class="sub" id="stat-revenue-alt"></div></div>
-        <div class="card"><div class="label">PayPal fees</div><div class="value" id="stat-fees">–</div><div class="sub" id="stat-fees-alt"></div></div>
-        <div class="card"><div class="label">You keep</div><div class="value" id="stat-net">–</div><div class="sub" id="stat-net-alt"></div></div>
+        <div class="card"><div class="label" data-i18n="payments">Payments</div><div class="value" id="stat-count">–</div><div class="sub" data-i18n="completed">completed</div></div>
+        <div class="card"><div class="label" data-i18n="revenue">Revenue</div><div class="value" id="stat-revenue">–</div><div class="sub" id="stat-revenue-alt"></div></div>
+        <div class="card"><div class="label" data-i18n="fees">PayPal fees</div><div class="value" id="stat-fees">–</div><div class="sub" id="stat-fees-alt"></div></div>
+        <div class="card"><div class="label" data-i18n="keep">You keep</div><div class="value" id="stat-net">–</div><div class="sub" id="stat-net-alt"></div></div>
     </div>
     <div class="rate-note" id="rate-note">
         <span class="dot" id="rate-dot"></span>
@@ -317,30 +333,105 @@
     </div>
 
     <div class="chat-card">
-        <div class="ai-label">💬 Ask about your payments</div>
+        <div class="ai-label" data-i18n="chat_title">💬 Ask about your payments</div>
         <div class="chat-messages" id="chat-messages">
-            <div class="msg bot">Hi! Ask me anything about your PayPal payments, or ask me to make a payment link, send an invoice or give a refund. I'll always check with you first.</div>
+            <div class="msg bot" data-i18n="greeting">Hi! Ask me anything about your PayPal payments, or ask me to make a payment link, send an invoice or give a refund. I'll always check with you first.</div>
         </div>
         <div class="chips">
-            <button type="button" class="chip">Who paid me the most?</button>
-            <button type="button" class="chip">How much did I lose to fees?</button>
-            <button type="button" class="chip">Which item sells best?</button>
-            <button type="button" class="chip">How much did I earn in rupees?</button>
-            <button type="button" class="chip">Make a payment link for a brass lamp, $25</button>
+            <button type="button" class="chip" data-i18n="chip1">Who paid me the most?</button>
+            <button type="button" class="chip" data-i18n="chip2">How much did I lose to fees?</button>
+            <button type="button" class="chip" data-i18n="chip3">Which item sells best?</button>
+            <button type="button" class="chip" data-i18n="chip4">How much did I earn in rupees?</button>
+            <button type="button" class="chip" data-i18n="chip5">Make a payment link for a brass lamp, $25</button>
         </div>
         <form class="chat-form" id="chat-form">
             <input id="chat-input" type="text" maxlength="500" autocomplete="off"
                    placeholder="e.g. How much did customers in the US pay me?">
-            <button type="submit" id="chat-send">Send</button>
+            <button type="submit" id="chat-send" data-i18n="send">Send</button>
         </form>
     </div>
 
-    <h2 class="section-title">Transactions</h2>
+    <h2 class="section-title" data-i18n="transactions">Transactions</h2>
     <div id="message"></div>
     <div id="grid"></div>
 </div>
 
 <script>
+    // ---------- Languages: English, Hindi, Malayalam ----------
+    const UI = {
+        en: {
+            subtitle: "Your PayPal payments from the last 30 days",
+            ai_summary: "✨ AI summary", payments: "Payments", completed: "completed",
+            revenue: "Revenue", fees: "PayPal fees", keep: "You keep",
+            chat_title: "💬 Ask about your payments",
+            greeting: "Hi! Ask me anything about your PayPal payments, or ask me to make a payment link, send an invoice or give a refund. I'll always check with you first.",
+            chip1: "Who paid me the most?", chip2: "How much did I lose to fees?", chip3: "Which item sells best?",
+            chip4: "How much did I earn in rupees?", chip5: "Make a payment link for a brass lamp, $25",
+            placeholder: "e.g. How much did customers in the US pay me?",
+            send: "Send", transactions: "Transactions", thinking: "Thinking",
+            confirm: "Confirm", cancel: "Cancel", working: "Working on it with PayPal…", done: "Done ✓",
+            cancelled: "Cancelled. Nothing was sent to PayPal.",
+            h_date: "Date", h_customer: "Customer", h_country: "Country", h_item: "Item",
+            h_amount: "Amount", h_fee: "Fee", h_keep: "You keep", h_status: "Status",
+            st_Completed: "Completed", st_Pending: "Pending", st_Refunded: "Refunded", st_Denied: "Denied",
+            no_rows: "No payments in the last 30 days yet.",
+            rate_market: "market rate", rate_updated: "updated", rate_estimate: "estimated rate (live rate unavailable)",
+            rate_paypal: "PayPal's own conversion rate is usually 3–4% lower",
+            err_server: "Couldn't reach the server. Is it running?",
+            err_csrf: "Security check failed. Please refresh the page and try again.",
+            err_tx: "Couldn't load transactions. Is the server running?",
+            err_summary: "Couldn't load the AI summary.",
+        },
+        hi: {
+            subtitle: "पिछले 30 दिनों के आपके PayPal भुगतान",
+            ai_summary: "✨ AI सारांश", payments: "भुगतान", completed: "पूरे हुए",
+            revenue: "कुल कमाई", fees: "PayPal शुल्क", keep: "शुद्ध कमाई",
+            chat_title: "💬 अपने भुगतानों के बारे में पूछें",
+            greeting: "नमस्ते! अपने PayPal भुगतानों के बारे में कुछ भी पूछें, या पेमेंट लिंक बनाने, इनवॉइस भेजने या रिफ़ंड देने को कहें। कुछ भी करने से पहले आपसे पुष्टि ली जाएगी।",
+            chip1: "सबसे ज़्यादा भुगतान किसने किया?", chip2: "फ़ीस में कितना गया?", chip3: "कौन-सा सामान सबसे ज़्यादा बिकता है?",
+            chip4: "मैंने रुपयों में कितना कमाया?", chip5: "पीतल के लैंप के लिए $25 का पेमेंट लिंक बनाओ",
+            placeholder: "जैसे: अमेरिका के ग्राहकों ने मुझे कितना भुगतान किया?",
+            send: "भेजें", transactions: "लेन-देन", thinking: "जवाब तैयार हो रहा है",
+            confirm: "पुष्टि करें", cancel: "रद्द करें", working: "PayPal पर काम हो रहा है…", done: "हो गया ✓",
+            cancelled: "रद्द किया गया। PayPal को कुछ नहीं भेजा गया।",
+            h_date: "तारीख", h_customer: "ग्राहक", h_country: "देश", h_item: "सामान",
+            h_amount: "राशि", h_fee: "शुल्क", h_keep: "शुद्ध", h_status: "स्थिति",
+            st_Completed: "पूरा हुआ", st_Pending: "लंबित", st_Refunded: "रिफ़ंड हुआ", st_Denied: "अस्वीकृत",
+            no_rows: "पिछले 30 दिनों में अभी तक कोई भुगतान नहीं।",
+            rate_market: "बाज़ार दर", rate_updated: "अपडेट", rate_estimate: "अनुमानित दर (लाइव दर उपलब्ध नहीं)",
+            rate_paypal: "PayPal की अपनी दर आमतौर पर 3–4% कम होती है",
+            err_server: "सर्वर से संपर्क नहीं हो पाया। क्या सर्वर चल रहा है?",
+            err_csrf: "सुरक्षा जाँच विफल रही। पेज रीफ़्रेश करके फिर कोशिश करें।",
+            err_tx: "लेन-देन लोड नहीं हो पाए। क्या सर्वर चल रहा है?",
+            err_summary: "AI सारांश लोड नहीं हो पाया।",
+        },
+        ml: {
+            subtitle: "കഴിഞ്ഞ 30 ദിവസത്തെ നിങ്ങളുടെ PayPal പേയ്‌മെന്റുകൾ",
+            ai_summary: "✨ AI സംഗ്രഹം", payments: "പേയ്‌മെന്റുകൾ", completed: "പൂർത്തിയായവ",
+            revenue: "ആകെ വരുമാനം", fees: "PayPal ഫീസ്", keep: "നിങ്ങൾക്ക് ലഭിക്കുന്നത്",
+            chat_title: "💬 നിങ്ങളുടെ പേയ്‌മെന്റുകളെക്കുറിച്ച് ചോദിക്കൂ",
+            greeting: "നമസ്കാരം! നിങ്ങളുടെ PayPal പേയ്‌മെന്റുകളെക്കുറിച്ച് എന്തും ചോദിക്കാം, അല്ലെങ്കിൽ പേയ്‌മെന്റ് ലിങ്ക് ഉണ്ടാക്കാനോ ഇൻവോയ്സ് അയയ്ക്കാനോ റീഫണ്ട് നൽകാനോ പറയാം. എന്തെങ്കിലും ചെയ്യുന്നതിന് മുമ്പ് ഞാൻ എപ്പോഴും നിങ്ങളോട് ചോദിക്കും.",
+            chip1: "ഏറ്റവും കൂടുതൽ പണം തന്നത് ആരാണ്?", chip2: "ഫീസിൽ എത്ര പോയി?", chip3: "ഏത് സാധനമാണ് ഏറ്റവും കൂടുതൽ വിറ്റത്?",
+            chip4: "രൂപയിൽ ഞാൻ എത്ര സമ്പാദിച്ചു?", chip5: "പിച്ചള വിളക്കിന് $25-ന്റെ പേയ്‌മെന്റ് ലിങ്ക് ഉണ്ടാക്കൂ",
+            placeholder: "ഉദാ: അമേരിക്കയിലെ ഉപഭോക്താക്കൾ എനിക്ക് എത്ര തന്നു?",
+            send: "അയയ്ക്കുക", transactions: "ഇടപാടുകൾ", thinking: "ആലോചിക്കുന്നു",
+            confirm: "ഉറപ്പാക്കുക", cancel: "റദ്ദാക്കുക", working: "PayPal-ൽ ചെയ്തുകൊണ്ടിരിക്കുന്നു…", done: "പൂർത്തിയായി ✓",
+            cancelled: "റദ്ദാക്കി. PayPal-ലേക്ക് ഒന്നും അയച്ചില്ല.",
+            h_date: "തീയതി", h_customer: "ഉപഭോക്താവ്", h_country: "രാജ്യം", h_item: "സാധനം",
+            h_amount: "തുക", h_fee: "ഫീസ്", h_keep: "ലഭിക്കുന്നത്", h_status: "സ്ഥിതി",
+            st_Completed: "പൂർത്തിയായി", st_Pending: "തീർപ്പാക്കാനുണ്ട്", st_Refunded: "റീഫണ്ട് ചെയ്തു", st_Denied: "നിരസിച്ചു",
+            no_rows: "കഴിഞ്ഞ 30 ദിവസത്തിൽ ഇതുവരെ പേയ്‌മെന്റുകളൊന്നുമില്ല.",
+            rate_market: "വിപണി നിരക്ക്", rate_updated: "പുതുക്കിയത്", rate_estimate: "ഏകദേശ നിരക്ക് (ലൈവ് നിരക്ക് ലഭ്യമല്ല)",
+            rate_paypal: "PayPal-ന്റെ സ്വന്തം നിരക്ക് സാധാരണയായി 3–4% കുറവാണ്",
+            err_server: "സെർവറുമായി ബന്ധപ്പെടാനായില്ല. സെർവർ പ്രവർത്തിക്കുന്നുണ്ടോ?",
+            err_csrf: "സുരക്ഷാ പരിശോധന പരാജയപ്പെട്ടു. പേജ് റീഫ്രഷ് ചെയ്ത് വീണ്ടും ശ്രമിക്കൂ.",
+            err_tx: "ഇടപാടുകൾ ലോഡ് ചെയ്യാനായില്ല. സെർവർ പ്രവർത്തിക്കുന്നുണ്ടോ?",
+            err_summary: "AI സംഗ്രഹം ലോഡ് ചെയ്യാനായില്ല.",
+        },
+    };
+    let lang = "en";
+    const tr = (key) => (UI[lang] && UI[lang][key]) || UI.en[key] || key;
+
     // ---------- Money: USD or INR ----------
     let rate = null;          // {rate: 94.85, live: true, updated: "..."} from the server
     let currency = "USD";     // what the seller chose with the toggle
@@ -382,8 +473,8 @@
         document.getElementById("rate-dot").classList.toggle("offline", !rate.live);
         document.getElementById("rate-text").textContent =
             `1 USD = ₹${rate.rate.toFixed(2)} · ` +
-            (rate.live ? `market rate${day ? ", updated " + day : ""}` : "estimated rate (live rate unavailable)") +
-            " · PayPal's own conversion rate is usually 3–4% lower";
+            (rate.live ? tr("rate_market") + (day ? `, ${tr("rate_updated")} ${day}` : "") : tr("rate_estimate")) +
+            " · " + tr("rate_paypal");
         note.style.display = "flex";
     }
 
@@ -396,19 +487,20 @@
 
     const columnDefs = [
         {
-            field: "date", headerName: "Date", sort: "desc", minWidth: 150,
+            field: "date", headerName: "Date", headerValueGetter: () => tr("h_date"), sort: "desc", minWidth: 150,
             valueFormatter: (p) => p.value ? new Date(p.value).toLocaleString("en-IN", {
                 day: "numeric", month: "short", hour: "2-digit", minute: "2-digit"
             }) : "",
         },
-        { field: "customer", headerName: "Customer", minWidth: 150 },
-        { field: "country", headerName: "Country", width: 110 },
-        { field: "item", headerName: "Item", minWidth: 180, flex: 1 },
-        { field: "amount", headerName: "Amount", width: 120, valueFormatter: (p) => money(p.value), type: "rightAligned" },
-        { field: "fee", headerName: "Fee", width: 100, valueFormatter: (p) => money(p.value), type: "rightAligned" },
-        { field: "net", headerName: "You keep", width: 120, valueFormatter: (p) => money(p.value), type: "rightAligned" },
+        { field: "customer", headerName: "Customer", headerValueGetter: () => tr("h_customer"), minWidth: 150 },
+        { field: "country", headerName: "Country", headerValueGetter: () => tr("h_country"), width: 110 },
+        { field: "item", headerName: "Item", headerValueGetter: () => tr("h_item"), minWidth: 180, flex: 1 },
+        { field: "amount", headerName: "Amount", headerValueGetter: () => tr("h_amount"), width: 120, valueFormatter: (p) => money(p.value), type: "rightAligned" },
+        { field: "fee", headerName: "Fee", headerValueGetter: () => tr("h_fee"), width: 100, valueFormatter: (p) => money(p.value), type: "rightAligned" },
+        { field: "net", headerName: "You keep", headerValueGetter: () => tr("h_keep"), width: 120, valueFormatter: (p) => money(p.value), type: "rightAligned" },
         {
-            field: "status", headerName: "Status", width: 130,
+            field: "status", headerName: "Status", headerValueGetter: () => tr("h_status"), width: 130,
+            valueFormatter: (p) => p.value ? tr("st_" + p.value) : "",
             cellStyle: (p) => ({ color: statusColors[p.value] || "var(--muted)", fontWeight: 600 }),
         },
     ];
@@ -422,7 +514,7 @@
         accentColor: "#d4af37",
         rowHoverColor: "rgba(212, 175, 55, 0.08)",
         oddRowBackgroundColor: "#17171c",
-        fontFamily: '"Segoe UI", system-ui, sans-serif',
+        fontFamily: '"Segoe UI", "Nirmala UI", system-ui, sans-serif',
         wrapperBorderRadius: 14,
     });
 
@@ -433,7 +525,7 @@
         defaultColDef: { sortable: true, filter: true, resizable: true },
         pagination: true,
         paginationPageSize: 20,
-        overlayNoRowsTemplate: '<span style="color:#8b8676">No payments in the last 30 days yet.</span>',
+        overlayNoRowsTemplate: '<span style="color:#8b8676" id="no-rows">No payments in the last 30 days yet.</span>',
     });
 
     function showMessage(text) {
@@ -470,25 +562,32 @@
             try { saved = localStorage.getItem("currency") || "USD"; } catch (e) {}
             setCurrency(saved, false);
         })
-        .catch(() => showMessage("⚠️ Couldn't load transactions. Is the server running?"));
+        .catch(() => showMessage("⚠️ " + tr("err_tx")));
 
     // Load the AI summary separately, so the table doesn't wait for the AI
     function showSummary(text, isError) {
         const box = document.getElementById("ai-summary");
         box.innerHTML = "";
         const p = document.createElement("p");
-        p.className = "ai-text" + (isError ? " error" : "");
+        p.className = "ai-text fade" + (isError ? " error" : "");
         p.textContent = text;
         box.appendChild(p);
     }
 
-    fetch("/api/summary/")
-        .then((res) => res.json())
-        .then((data) => {
-            if (data.error) showSummary("⚠️ " + data.error, true);
-            else showSummary(data.summary, false);
-        })
-        .catch(() => showSummary("⚠️ Couldn't load the AI summary.", true));
+    let summaryRequest = 0;  // ignore old answers if the language is switched quickly
+    function loadSummary() {
+        const mine = ++summaryRequest;
+        document.getElementById("ai-summary").innerHTML =
+            '<div class="shimmer" style="width: 95%"></div><div class="shimmer" style="width: 80%"></div><div class="shimmer" style="width: 60%"></div>';
+        fetch("/api/summary/?lang=" + lang)
+            .then((res) => res.json())
+            .then((data) => {
+                if (mine !== summaryRequest) return;
+                if (data.error) showSummary("⚠️ " + data.error, true);
+                else showSummary(data.summary, false);
+            })
+            .catch(() => { if (mine === summaryRequest) showSummary("⚠️ " + tr("err_summary"), true); });
+    }
 
     // ---------- Ask-your-data chat ----------
     const chatBox = document.getElementById("chat-messages");
@@ -526,7 +625,7 @@
         addMessage(question, "user");
         chatInput.value = "";
         setBusy(true);
-        const typing = addMessage("Thinking", "bot typing");
+        const typing = addMessage(tr("thinking"), "bot typing");
 
         try {
             const res = await fetch("/api/chat/", {
@@ -535,12 +634,12 @@
                     "Content-Type": "application/json",
                     "X-CSRFToken": getCookie("csrftoken"),
                 },
-                body: JSON.stringify({ question, history: chatHistory.slice(-6) }),
+                body: JSON.stringify({ question, history: chatHistory.slice(-6), lang }),
             });
             typing.remove();
 
             if (res.status === 403) {
-                addMessage("⚠️ Security check failed. Please refresh the page and try again.", "bot error");
+                addMessage("⚠️ " + tr("err_csrf"), "bot error");
                 return;
             }
             const data = await res.json();
@@ -553,7 +652,7 @@
             }
         } catch (e) {
             typing.remove();
-            addMessage("⚠️ Couldn't reach the server. Is it running?", "bot error");
+            addMessage("⚠️ " + tr("err_server"), "bot error");
         } finally {
             setBusy(false);
             chatInput.focus();
@@ -585,10 +684,10 @@
         buttons.className = "action-buttons";
         const confirmBtn = document.createElement("button");
         confirmBtn.className = "btn-confirm";
-        confirmBtn.textContent = "Confirm";
+        confirmBtn.textContent = tr("confirm");
         const cancelBtn = document.createElement("button");
         cancelBtn.className = "btn-cancel";
-        cancelBtn.textContent = "Cancel";
+        cancelBtn.textContent = tr("cancel");
         buttons.append(confirmBtn, cancelBtn);
         card.appendChild(buttons);
 
@@ -601,14 +700,14 @@
 
         cancelBtn.addEventListener("click", () => {
             buttons.remove();
-            status.textContent = "Cancelled. Nothing was sent to PayPal.";
+            status.textContent = tr("cancelled");
             chatHistory.push({ role: "assistant", text: "(The seller cancelled: " + action.title + ")" });
         });
 
         confirmBtn.addEventListener("click", async () => {
             confirmBtn.disabled = true;
             cancelBtn.disabled = true;
-            status.textContent = "Working on it with PayPal…";
+            status.textContent = tr("working");
             try {
                 const res = await fetch("/api/action/", {
                     method: "POST",
@@ -622,7 +721,7 @@
                     addMessage("⚠️ " + data.error, "bot error");
                     return;
                 }
-                status.textContent = "Done ✓";
+                status.textContent = tr("done");
                 const msg = addMessage(data.message, "bot");
                 // Only show real PayPal https links, built safely (no innerHTML)
                 if (data.link && data.link.startsWith("https://")) {
@@ -640,7 +739,7 @@
                 status.textContent = "";
                 confirmBtn.disabled = false;
                 cancelBtn.disabled = false;
-                addMessage("⚠️ Couldn't reach the server. Is it running?", "bot error");
+                addMessage("⚠️ " + tr("err_server"), "bot error");
             }
         });
     }
@@ -650,6 +749,45 @@
         askQuestion(chatInput.value);
     });
     chips.forEach((chip) => chip.addEventListener("click", () => askQuestion(chip.textContent)));
+
+    // ---------- Switching language ----------
+    const langToggle = document.getElementById("lang-toggle");
+    const LANG_CODES = ["en", "hi", "ml"];
+    let summaryTimer = null;
+
+    function setLanguage(next, reloadSummary) {
+        lang = LANG_CODES.includes(next) ? next : "en";
+        document.documentElement.lang = lang;
+        langToggle.style.setProperty("--i", LANG_CODES.indexOf(lang));
+        langToggle.querySelectorAll("button").forEach((b) =>
+            b.setAttribute("aria-pressed", String(b.dataset.lang === lang)));
+        try { localStorage.setItem("lang", lang); } catch (e) {}
+
+        document.querySelectorAll("[data-i18n]").forEach((el) => { el.textContent = tr(el.dataset.i18n); });
+        chatInput.placeholder = tr("placeholder");
+        const noRows = document.getElementById("no-rows");
+        if (noRows) noRows.textContent = tr("no_rows");
+        grid.setGridOption("overlayNoRowsTemplate", `<span style="color:#8b8676" id="no-rows">${tr("no_rows")}</span>`);
+        grid.refreshHeader();
+        grid.refreshCells({ force: true });
+        showRate();
+        if (reloadSummary) {
+            // Wait until the seller stops clicking, so quick switches ask the AI only once
+            clearTimeout(summaryTimer);
+            summaryTimer = setTimeout(loadSummary, 600);
+        }
+    }
+
+    langToggle.addEventListener("click", (e) => {
+        const btn = e.target.closest("button");
+        if (btn && btn.dataset.lang !== lang) setLanguage(btn.dataset.lang, true);
+    });
+
+    // Start in the language the seller used last time
+    let savedLang = "en";
+    try { savedLang = localStorage.getItem("lang") || "en"; } catch (e) {}
+    setLanguage(savedLang, false);
+    loadSummary();
 </script>
 </body>
 </html>

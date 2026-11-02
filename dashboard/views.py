@@ -12,6 +12,7 @@ from django.views.decorators.http import require_POST
 
 from .ai_helper import ACTIONS, MAX_QUESTION_LENGTH, AIError, chat_reply, summarize_sales
 from .currency import format_inr, get_usd_inr_rate
+from .translations import clean_lang, t
 from .paypal_client import (
     PayPalError,
     capture_order,
@@ -49,7 +50,8 @@ def summary_api(request):
     """Asks the AI to summarise the seller's recent PayPal payments."""
     try:
         rows = get_transactions(days=30)
-        summary = summarize_sales(rows, rate=get_usd_inr_rate())
+        lang = clean_lang(request.GET.get("lang", "en"))
+        summary = summarize_sales(rows, lang=lang, rate=get_usd_inr_rate())
     except (PayPalError, AIError) as e:
         return JsonResponse({"error": str(e)}, status=503)
     except requests.RequestException as e:
@@ -59,7 +61,7 @@ def summary_api(request):
 
 # ------------------------------------------------------------------ Chat + actions
 
-def _check_action(plan, rows):
+def _check_action(plan, rows, lang="en"):
     """Never trust the AI blindly: check every detail of the action it suggests.
     Returns (action, None) if it's good, or (None, "question to ask the seller")."""
     kind = plan.get("action")
@@ -71,15 +73,15 @@ def _check_action(plan, rows):
 
     if kind in ("checkout_link", "invoice"):
         if not item:
-            return None, "What item is this for?"
+            return None, t(lang, "ask_item")
         if not amount or amount <= 0 or amount > MAX_AMOUNT:
-            return None, f"How much should it be? Please give an amount between $0.01 and ${MAX_AMOUNT:,}."
+            return None, t(lang, "ask_amount", max=f"{MAX_AMOUNT:,}")
         if kind == "checkout_link":
             return {"type": kind, "item": item, "amount": amount}, None
 
         email = str(plan.get("customer_email") or "").strip()
         if not EMAIL_RE.match(email):
-            return None, "What's the customer's email address? I need it to send the invoice."
+            return None, t(lang, "ask_email")
         name = str(plan.get("customer_name") or "").strip()[:80]
         return {"type": "invoice", "item": item, "amount": amount, "email": email, "name": name}, None
 
@@ -87,9 +89,9 @@ def _check_action(plan, rows):
         tid = str(plan.get("transaction_id") or "")
         match = next((r for r in rows if r["id"] == tid), None)
         if not match:
-            return None, "I couldn't find that payment. Which one should I refund? Tell me the customer and the item."
+            return None, t(lang, "refund_not_found")
         if match["status"] != "Completed" or match["amount"] <= 0:
-            return None, "That payment can't be refunded, because it isn't a completed payment."
+            return None, t(lang, "refund_not_completed")
         return {
             "type": "refund", "transaction_id": tid,
             "customer": match["customer"], "item": match["item"], "amount": match["amount"],
@@ -98,15 +100,16 @@ def _check_action(plan, rows):
     return None, None
 
 
-def _confirm_card(action, rate):
+def _confirm_card(action, rate, lang="en"):
     """What the seller sees on the confirm card (dollars, with rupees alongside)."""
     money = f"${action['amount']:.2f}  (≈ {format_inr(action['amount'], rate)})"
+    item, amount = [t(lang, "lbl_item"), action["item"]], [t(lang, "lbl_amount"), money]
     if action["type"] == "checkout_link":
-        return "🔗 Create payment link", [["Item", action["item"]], ["Amount", money]]
+        return t(lang, "card_link"), [item, amount]
     if action["type"] == "invoice":
         who = f"{action['name']} ({action['email']})" if action["name"] else action["email"]
-        return "🧾 Send invoice", [["To", who], ["Item", action["item"]], ["Amount", money]]
-    return "↩️ Refund payment", [["Customer", action["customer"]], ["Item", action["item"]], ["Refund", money]]
+        return t(lang, "card_invoice"), [[t(lang, "lbl_to"), who], item, amount]
+    return t(lang, "card_refund"), [[t(lang, "lbl_customer"), action["customer"]], item, [t(lang, "lbl_refund"), money]]
 
 
 @require_POST
@@ -118,6 +121,7 @@ def chat_api(request):
         return JsonResponse({"error": "Something went wrong sending your question."}, status=400)
 
     question = str(body.get("question", "")).strip()
+    lang = clean_lang(body.get("lang", "en"))
     history = body.get("history", [])
     if not isinstance(history, list):
         history = []
@@ -131,7 +135,7 @@ def chat_api(request):
     try:
         rows = get_transactions(days=30)
         rate = get_usd_inr_rate()
-        plan = chat_reply(rows, question, history, rate=rate)
+        plan = chat_reply(rows, question, history, lang=lang, rate=rate)
     except (PayPalError, AIError) as e:
         return JsonResponse({"error": str(e)}, status=503)
     except requests.RequestException as e:
@@ -140,11 +144,12 @@ def chat_api(request):
     if plan["action"] not in ACTIONS:
         return JsonResponse({"answer": plan["reply"]})
 
-    action, problem = _check_action(plan, rows)
+    action, problem = _check_action(plan, rows, lang)
     if problem:
         return JsonResponse({"answer": problem})
 
-    title, details = _confirm_card(action, rate)
+    action["lang"] = lang  # so the "done" message after Confirm is in the same language
+    title, details = _confirm_card(action, rate, lang)
     return JsonResponse({
         "answer": plan["reply"],
         "action": {
@@ -168,6 +173,9 @@ def action_api(request):
     except (json.JSONDecodeError, signing.BadSignature):
         return JsonResponse({"error": "This request isn't valid. Please ask again."}, status=400)
 
+    lang = clean_lang(action.get("lang", "en"))
+    money = f"${action['amount']:.2f}"
+
     # Same token -> same request ID, so a double-click can't do the action twice
     request_id = hashlib.sha256(token.encode()).hexdigest()[:40]
 
@@ -180,8 +188,8 @@ def action_api(request):
                 request_id=request_id,
             )
             return JsonResponse({
-                "message": f"✅ Payment link ready for {action['item']} (${action['amount']:.2f}). Share it with your customer:",
-                "link": result["link"], "link_text": "Open payment link",
+                "message": t(lang, "done_link", item=action["item"], amount=money),
+                "link": result["link"], "link_text": t(lang, "open_link"),
             })
 
         if action["type"] == "invoice":
@@ -190,15 +198,14 @@ def action_api(request):
             )
             number = f" #{result['invoice_number']}" if result["invoice_number"] else ""
             return JsonResponse({
-                "message": f"✅ Invoice{number} for ${action['amount']:.2f} sent to {action['email']}.",
-                "link": result["link"], "link_text": "View invoice",
+                "message": t(lang, "done_invoice", number=number, amount=money, email=action["email"]),
+                "link": result["link"], "link_text": t(lang, "view_invoice"),
             })
 
         if action["type"] == "refund":
             refund_payment(action["transaction_id"])
             return JsonResponse({
-                "message": f"✅ Refunded ${action['amount']:.2f} to {action['customer']} for {action['item']}. "
-                           "It can take a little while to show in your transactions.",
+                "message": t(lang, "done_refund", amount=money, customer=action["customer"], item=action["item"]),
             })
     except PayPalError as e:
         return JsonResponse({"error": str(e)}, status=503)
