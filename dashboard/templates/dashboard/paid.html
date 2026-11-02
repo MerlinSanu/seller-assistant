@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% if paid %}Payment complete{% else %}Payment problem{% endif %}</title>
+    <style>
+        :root { --bg: #0c0c0f; --panel: #15151a; --border: #2a2a31; --gold: #d4af37;
+                --gold-light: #f5e6a8; --text: #e8e2d0; --muted: #8b8676; --amber: #e0b860; }
+        * { box-sizing: border-box; }
+        body {
+            margin: 0; min-height: 100vh; display: grid; place-items: center; padding: 20px;
+            background: radial-gradient(ellipse at top, rgba(212, 175, 55, 0.12), transparent 60%), var(--bg);
+            color: var(--text); font-family: "Segoe UI", system-ui, sans-serif;
+        }
+        .box {
+            max-width: 460px; width: 100%; text-align: center; padding: 40px 32px;
+            background: linear-gradient(135deg, rgba(212, 175, 55, 0.10), rgba(21, 21, 26, 0.95));
+            border: 1px solid rgba(212, 175, 55, 0.35); border-radius: 18px;
+            animation: rise 0.5s ease-out;
+        }
+        @keyframes rise { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: none; } }
+        .icon { font-size: 3rem; margin-bottom: 8px; }
+        h1 {
+            font-family: Georgia, serif; font-size: 2rem; margin: 0 0 10px;
+            background: linear-gradient(90deg, var(--gold), var(--gold-light));
+            -webkit-background-clip: text; background-clip: text; color: transparent;
+        }
+        p { color: var(--muted); line-height: 1.6; margin: 0; }
+        .error { color: var(--amber); margin-top: 12px; font-size: 0.9rem; }
+    </style>
+</head>
+<body>
+<div class="box">
+    {% if paid %}
+        <div class="icon">✨</div>
+        <h1>Thank you!</h1>
+        <p>Your payment is complete. The seller has been notified, and you can close this page.</p>
+    {% else %}
+        <div class="icon">⚠️</div>
+        <h1>Payment not completed</h1>
+        <p>Something went wrong and you have not been charged. Please contact the seller.</p>
+        {% if error %}<p class="error">{{ error }}</p>{% endif %}
+    {% endif %}
+</div>
+</body>
+</html>

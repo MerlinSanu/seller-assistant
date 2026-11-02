@@ -190,6 +190,40 @@
         .chat-form button:active { transform: scale(0.97); }
         .chat-form button:disabled { opacity: 0.5; cursor: not-allowed; }
 
+        /* ---------- Confirm card for agent actions ---------- */
+        .action-card {
+            align-self: flex-start;
+            width: min(420px, 90%);
+            background: linear-gradient(135deg, rgba(212, 175, 55, 0.14), #1a1a20);
+            border: 1px solid rgba(212, 175, 55, 0.5);
+            border-radius: 14px;
+            padding: 16px 18px;
+            animation: pop 0.25s ease-out;
+        }
+        .action-title { font-family: Georgia, serif; font-size: 1.1rem; color: var(--gold-light); margin-bottom: 10px; }
+        .action-row {
+            display: flex; justify-content: space-between; gap: 16px;
+            padding: 6px 0; border-bottom: 1px dashed var(--border); font-size: 0.93rem;
+        }
+        .action-row:last-of-type { border-bottom: none; }
+        .action-row span:first-child { color: var(--muted); }
+        .action-row span:last-child { text-align: right; word-break: break-word; }
+        .action-buttons { display: flex; gap: 10px; margin-top: 14px; }
+        .action-buttons button {
+            flex: 1; padding: 9px 0; border-radius: 9px; font-weight: 600;
+            font-family: inherit; cursor: pointer; transition: opacity 0.2s, transform 0.1s;
+        }
+        .action-buttons button:active { transform: scale(0.97); }
+        .action-buttons button:disabled { opacity: 0.5; cursor: not-allowed; }
+        .btn-confirm { background: linear-gradient(90deg, var(--gold), var(--gold-light)); color: #1a1608; border: none; }
+        .btn-cancel { background: transparent; color: var(--text); border: 1px solid var(--border); }
+        .action-status { margin-top: 10px; font-size: 0.85rem; color: var(--muted); }
+        .msg a {
+            display: inline-block; margin-top: 8px; color: var(--gold-light);
+            border-bottom: 1px solid rgba(212, 175, 55, 0.5); text-decoration: none; word-break: break-all;
+        }
+        .msg a:hover { color: var(--gold); }
+
         .section-title { font-family: Georgia, serif; font-size: 1.3rem; margin: 0 0 12px; color: var(--text); }
         #grid { height: 480px; width: 100%; }
         #message {
@@ -228,13 +262,13 @@
     <div class="chat-card">
         <div class="ai-label">💬 Ask about your payments</div>
         <div class="chat-messages" id="chat-messages">
-            <div class="msg bot">Hi! Ask me anything about your PayPal payments from the last 30 days.</div>
+            <div class="msg bot">Hi! Ask me anything about your PayPal payments, or ask me to make a payment link, send an invoice or give a refund. I'll always check with you first.</div>
         </div>
         <div class="chips">
             <button type="button" class="chip">Who paid me the most?</button>
             <button type="button" class="chip">How much did I lose to fees?</button>
             <button type="button" class="chip">Which item sells best?</button>
-            <button type="button" class="chip">Any payments I should check?</button>
+            <button type="button" class="chip">Make a payment link for a brass lamp, $25</button>
         </div>
         <form class="chat-form" id="chat-form">
             <input id="chat-input" type="text" maxlength="500" autocomplete="off"
@@ -405,6 +439,7 @@
             } else {
                 addMessage(data.answer, "bot");
                 chatHistory.push({ role: "user", text: question }, { role: "assistant", text: data.answer });
+                if (data.action) addActionCard(data.action);
             }
         } catch (e) {
             typing.remove();
@@ -413,6 +448,91 @@
             setBusy(false);
             chatInput.focus();
         }
+    }
+
+    // ---------- Agent actions: nothing happens until the seller presses Confirm ----------
+    function addActionCard(action) {
+        const card = document.createElement("div");
+        card.className = "action-card";
+
+        const title = document.createElement("div");
+        title.className = "action-title";
+        title.textContent = action.title;
+        card.appendChild(title);
+
+        action.details.forEach(([label, value]) => {
+            const row = document.createElement("div");
+            row.className = "action-row";
+            const l = document.createElement("span");
+            const v = document.createElement("span");
+            l.textContent = label;
+            v.textContent = value;
+            row.append(l, v);
+            card.appendChild(row);
+        });
+
+        const buttons = document.createElement("div");
+        buttons.className = "action-buttons";
+        const confirmBtn = document.createElement("button");
+        confirmBtn.className = "btn-confirm";
+        confirmBtn.textContent = "Confirm";
+        const cancelBtn = document.createElement("button");
+        cancelBtn.className = "btn-cancel";
+        cancelBtn.textContent = "Cancel";
+        buttons.append(confirmBtn, cancelBtn);
+        card.appendChild(buttons);
+
+        const status = document.createElement("div");
+        status.className = "action-status";
+        card.appendChild(status);
+
+        chatBox.appendChild(card);
+        chatBox.scrollTop = chatBox.scrollHeight;
+
+        cancelBtn.addEventListener("click", () => {
+            buttons.remove();
+            status.textContent = "Cancelled. Nothing was sent to PayPal.";
+            chatHistory.push({ role: "assistant", text: "(The seller cancelled: " + action.title + ")" });
+        });
+
+        confirmBtn.addEventListener("click", async () => {
+            confirmBtn.disabled = true;
+            cancelBtn.disabled = true;
+            status.textContent = "Working on it with PayPal…";
+            try {
+                const res = await fetch("/api/action/", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json", "X-CSRFToken": getCookie("csrftoken") },
+                    body: JSON.stringify({ token: action.token }),
+                });
+                const data = await res.json();
+                buttons.remove();
+                if (data.error) {
+                    status.textContent = "";
+                    addMessage("⚠️ " + data.error, "bot error");
+                    return;
+                }
+                status.textContent = "Done ✓";
+                const msg = addMessage(data.message, "bot");
+                // Only show real PayPal https links, built safely (no innerHTML)
+                if (data.link && data.link.startsWith("https://")) {
+                    msg.appendChild(document.createElement("br"));
+                    const a = document.createElement("a");
+                    a.href = data.link;
+                    a.target = "_blank";
+                    a.rel = "noopener noreferrer";
+                    a.textContent = data.link_text || data.link;
+                    msg.appendChild(a);
+                    chatBox.scrollTop = chatBox.scrollHeight;
+                }
+                chatHistory.push({ role: "assistant", text: data.message });
+            } catch (e) {
+                status.textContent = "";
+                confirmBtn.disabled = false;
+                cancelBtn.disabled = false;
+                addMessage("⚠️ Couldn't reach the server. Is it running?", "bot error");
+            }
+        });
     }
 
     chatForm.addEventListener("submit", (e) => {
